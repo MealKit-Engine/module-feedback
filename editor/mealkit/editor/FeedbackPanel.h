@@ -1,7 +1,7 @@
 #pragma once
 
 #include "mealkit/core/Reflect.h"
-#include "mealkit/game/Tables.h"
+#include "mealkit/data/Tables.h"
 
 #include <string>
 
@@ -27,7 +27,7 @@ private:
 
     std::string m_path;
     const reflect::TypeInfo* m_eventType = nullptr;
-    game::TableData m_table;
+    data::TableData m_table;
     std::string m_selectedKind;
     bool m_dirty = false;
     f64 m_saveTimer = 0.0;

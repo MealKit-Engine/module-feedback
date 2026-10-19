@@ -43,14 +43,14 @@ void FeedbackPanel::load() {
     std::string warnings;
     m_table = {};
     m_table.rowType = &reflect::typeOf<feedback::Reaction>();
-    if (fileExists(m_path)) game::loadTableData(*m_table.rowType, m_path, m_table, &warnings);
+    if (fileExists(m_path)) data::loadTableData(*m_table.rowType, m_path, m_table, &warnings);
     m_dirty = false;
     m_status = warnings;
 }
 
 void FeedbackPanel::save() {
     createDirectories(parentDirectory(m_path));
-    m_status = game::saveTableData(m_table, m_path) ? trf("Saved %s", "assets\\feedback.table")
+    m_status = data::saveTableData(m_table, m_path) ? trf("Saved %s", "assets\\feedback.table")
                                                      : trf("Could not save %s", m_path.c_str());
     m_dirty = false;
 }
@@ -146,7 +146,7 @@ void FeedbackPanel::draw(feedback::Player* player, Vec3 previewAt, f64 dt, bool*
         // 첫 행은 종류 이름 그대로, 그다음은 "종류.접미사" (예: Fall.local)
         std::string id = m_selectedKind;
         if (std::find(m_table.ids.begin(), m_table.ids.end(), id) != m_table.ids.end()) id += std::string(".") + m_suffix;
-        if (!game::validRowId(id) || std::find(m_table.ids.begin(), m_table.ids.end(), id) != m_table.ids.end()) {
+        if (!data::validRowId(id) || std::find(m_table.ids.begin(), m_table.ids.end(), id) != m_table.ids.end()) {
             m_status = trf("'%s' cannot be a row id (letters, digits, _ - . and unique in the table)", id.c_str());
         } else {
             m_table.ids.push_back(id);

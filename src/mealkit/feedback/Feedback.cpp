@@ -2,7 +2,7 @@
 
 #include "mealkit/audio/Audio.h"
 #include "mealkit/core/Log.h"
-#include "mealkit/game/Tables.h"
+#include "mealkit/data/Tables.h"
 #include "mealkit/platform/Paths.h"
 
 #include <algorithm>
@@ -98,7 +98,7 @@ struct Player::Impl {
         tablePath = findAsset(std::string("assets/") + kFeedbackTable);
         tableTime = tablePath.empty() ? 0 : fileWriteTime(tablePath);
         table = {};
-        if (!tablePath.empty()) game::loadTable(table, kFeedbackTable);
+        if (!tablePath.empty()) data::loadTable(table, kFeedbackTable);
     }
 
     void poll() {
