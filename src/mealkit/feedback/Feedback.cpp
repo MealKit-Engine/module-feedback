@@ -88,6 +88,8 @@ struct Player::Impl {
     f64 tableCheck = 0.0;
     f64 time = 0.0;
     f64 hitStopUntil = 0.0;
+    f32 shakeScale = 1.0f, flashScale = 1.0f; // 접근성 (플레이어 설정)
+    bool hitStopEnabled = true;
     std::vector<Shake> shakes;
     std::vector<Flash> flashes;
     u32 shakeCount = 0;
@@ -186,7 +188,7 @@ Vec3 Player::cameraShake(Vec3 focus) const {
         // 축마다 다른 주파수의 사인 합 (부드러운 떨림)
         offset += Vec3{std::sin(w), std::sin(w * 1.31f + 1.1f), std::sin(w * 0.87f + 2.3f)} * amount;
     }
-    return offset;
+    return offset * m->shakeScale;
 }
 
 void Player::screenTint(Vec3& color, f32& amount) const {
@@ -198,9 +200,16 @@ void Player::screenTint(Vec3& color, f32& amount) const {
             color = f.color;
         }
     }
+    amount *= m->flashScale;
 }
 
-bool Player::hitStop() const { return m->time < m->hitStopUntil; }
+bool Player::hitStop() const { return m->hitStopEnabled && m->time < m->hitStopUntil; }
+
+void Player::setAccessibility(f32 shakeScale, f32 flashScale, bool hitStop) {
+    m->shakeScale = std::clamp(shakeScale, 0.0f, 1.0f);
+    m->flashScale = std::clamp(flashScale, 0.0f, 1.0f);
+    m->hitStopEnabled = hitStop;
+}
 
 void Player::clear() {
     m->shakes.clear();

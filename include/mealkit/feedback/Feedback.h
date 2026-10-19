@@ -62,6 +62,8 @@ public:
     // 화면 정지 중 (게임 화면 쪽 시계·보간·효과를 멈춘다. 시뮬레이션은 계속)
     bool hitStop() const;
     void clear(); // 진행 중인 흔들림·번쩍임·정지를 지운다 (플레이를 멈출 때)
+    // 접근성 (플레이어 설정): 흔들림·번쩍임 배율 0..1, 화면 정지 켜기. 표는 그대로이고 결과에만 곱한다
+    void setAccessibility(f32 shakeScale, f32 flashScale, bool hitStop);
 
     void reload(); // 표를 지금 다시 읽는다 (에디터가 저장한 뒤)
     const std::vector<std::string>& rowIds() const;
