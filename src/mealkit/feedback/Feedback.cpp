@@ -3,7 +3,10 @@
 #include "mealkit/audio/Audio.h"
 #include "mealkit/core/Log.h"
 #include "mealkit/data/Tables.h"
+#include "mealkit/core/Random.h"
+#include "mealkit/core/TextFormat.h"
 #include "mealkit/platform/Paths.h"
+#include "mealkit/render/DrawList.h"
 
 #include <algorithm>
 #include <cmath>
@@ -32,6 +35,31 @@ struct Flash {
     f32 amount = 0.0f;
     Vec3 color; // 선형
 };
+
+// 살아 있는 입자 하나 (화면 쪽, 결정론 밖)
+struct Spark {
+    Vec3 position, velocity;
+    f32 age = 0.0f, lifetime = 1.0f;
+    f32 rotation = 0.0f, spin = 0.0f;
+    u32 effect = 0; // Player::Impl::effects 번호
+};
+
+struct LoadedEffect {
+    std::string name, path;
+    unsigned long long time = 0;
+    bool loaded = false;
+    Effect value;
+};
+
+constexpr u32 kMaxSparks = render::kMaxParticlesPerFrame;
+
+u32 mixColor(Color a, Color b, f32 t) {
+    auto ch = [&](u32 shift) {
+        const f32 x = static_cast<f32>((a.value >> shift) & 0xFF), y = static_cast<f32>((b.value >> shift) & 0xFF);
+        return static_cast<u32>(x + (y - x) * t + 0.5f) << shift;
+    };
+    return ch(0) | ch(8) | ch(16) | ch(24);
+}
 
 Vec3 linearColor(Color c) {
     auto ch = [](u32 v) {
@@ -93,6 +121,78 @@ struct Player::Impl {
     std::vector<Shake> shakes;
     std::vector<Flash> flashes;
     u32 shakeCount = 0;
+    std::vector<LoadedEffect> effects;
+    std::vector<Spark> sparks;
+    Pcg32 rng{0x6d65616c6b6974ull}; // 연출용 (시뮬레이션 난수와 섞지 않는다)
+    f64 effectCheck = 0.0;
+
+    // 이름의 효과 (처음이면 읽는다). 없는 파일은 경고하고 빈 효과로 둔다 (파일이 생기면 pollEffects가 읽는다)
+    u32 effectIndex(const std::string& name) {
+        for (u32 i = 0; i < effects.size(); ++i)
+            if (effects[i].name == name) return i;
+        LoadedEffect e;
+        e.name = name;
+        effects.push_back(e);
+        loadEffect(effects.back());
+        return static_cast<u32>(effects.size() - 1);
+    }
+    void loadEffect(LoadedEffect& e) {
+        e.path = findAsset(std::string("assets/") + kEffectFolder + "/" + e.name + ".fx");
+        e.time = e.path.empty() ? 0 : fileWriteTime(e.path);
+        e.value = Effect{};
+        std::string error;
+        e.loaded = !e.path.empty() && reflect::loadTextFile(reflect::typeOf<Effect>(), &e.value, e.path, text::kEffect, &error);
+        if (!e.loaded) MEALKIT_WARN("Effect '%s': %s", e.name.c_str(), e.path.empty() ? "no assets/effects file" : error.c_str());
+    }
+    void pollEffects() {
+        if (time < effectCheck) return;
+        effectCheck = time + kTableCheckSeconds;
+        for (LoadedEffect& e : effects) {
+            const std::string path = findAsset(std::string("assets/") + kEffectFolder + "/" + e.name + ".fx");
+            if (path != e.path || (path.empty() ? 0 : fileWriteTime(path)) != e.time) loadEffect(e);
+        }
+    }
+
+    void spawn(const std::string& name, Vec3 position, f32 strength) {
+        const u32 index = effectIndex(name);
+        if (!effects[index].loaded) return;
+        const Effect& fx = effects[index].value;
+        const u32 count = static_cast<u32>(static_cast<f32>(fx.count) * std::clamp(strength, 0.0f, 1.0f) + 0.5f);
+        const f32 len = length(fx.direction);
+        const Vec3 dir = len > 1e-4f ? fx.direction * (1.0f / len) : Vec3{0, 1, 0};
+        for (u32 i = 0; i < count && sparks.size() < kMaxSparks; ++i) {
+            // 공 안의 고른 점 (거절 표본)과 방향: 주 방향과 무작위 방향을 spread만큼 섞는다
+            Vec3 ball;
+            do {
+                ball = Vec3{rng.range(-1, 1), rng.range(-1, 1), rng.range(-1, 1)};
+            } while (dot(ball, ball) > 1.0f);
+            const f32 bl = length(ball);
+            const Vec3 random = bl > 1e-4f ? ball * (1.0f / bl) : dir;
+            Vec3 v = lerp(dir, random, std::clamp(fx.spread, 0.0f, 1.0f));
+            const f32 vl = length(v);
+            v = vl > 1e-4f ? v * (1.0f / vl) : random;
+            Spark s;
+            s.position = position + ball * fx.radius;
+            s.velocity = v * (fx.speed * (1.0f - std::clamp(fx.speedRandom, 0.0f, 1.0f) * rng.next01()));
+            s.lifetime = std::max(0.01f, fx.lifetime * (1.0f - std::clamp(fx.lifetimeRandom, 0.0f, 1.0f) * rng.next01()));
+            s.rotation = rng.range(0.0f, kTwoPi);
+            s.spin = fx.spin * kTwoPi * ((rng.next() & 1) ? 1.0f : -1.0f);
+            s.effect = index;
+            sparks.push_back(s);
+        }
+    }
+
+    void step(f32 dt) {
+        for (Spark& s : sparks) {
+            const Effect& fx = effects[s.effect].value;
+            s.age += dt;
+            s.velocity.y -= fx.gravity * dt;
+            s.velocity = s.velocity * std::max(0.0f, 1.0f - fx.drag * dt);
+            s.position += s.velocity * dt;
+            s.rotation += s.spin * dt;
+        }
+        std::erase_if(sparks, [](const Spark& s) { return s.age >= s.lifetime; });
+    }
 
     explicit Impl(audio::Engine& a) : audio(a) {}
 
@@ -129,6 +229,7 @@ struct Player::Impl {
                               position, static_cast<f32>(shakeCount++) * 1.7f});
         if (r.flash > 0.0f && r.flashSeconds > 0.0f)
             flashes.push_back({time, r.flashSeconds, std::clamp(r.flash * strength, 0.0f, 1.0f), linearColor(r.flashColor)});
+        if (!r.effect.empty() && positioned) spawn(r.effect, position, strength);
         if (r.hitStop > 0.0f) hitStopUntil = std::max(hitStopUntil, time + r.hitStop);
     }
 };
@@ -174,7 +275,34 @@ void Player::update(f64 dt) {
     m->poll();
     std::erase_if(m->shakes, [&](const Shake& s) { return m->time - s.start >= s.seconds; });
     std::erase_if(m->flashes, [&](const Flash& f) { return m->time - f.start >= f.seconds; });
+    m->pollEffects();
+    if (!hitStop()) m->step(static_cast<f32>(std::min(dt, 0.1))); // 화면 정지 중에는 파티클도 멈춘다
 }
+
+void Player::playEffect(const std::string& name, Vec3 position, f32 strength) {
+    if (!name.empty()) m->spawn(name, position, strength);
+}
+
+void Player::addParticles(render::DrawList& out) const {
+    if (m->sparks.empty()) return;
+    std::vector<render::Particle> particles;
+    particles.reserve(m->sparks.size());
+    for (const Spark& s : m->sparks) {
+        const Effect& fx = m->effects[s.effect].value;
+        const f32 t = std::clamp(s.age / s.lifetime, 0.0f, 1.0f);
+        render::Particle p;
+        p.position = s.position;
+        p.size = fx.sizeStart + (fx.sizeEnd - fx.sizeStart) * t;
+        p.color = mixColor(fx.colorStart, fx.colorEnd, t);
+        p.rotation = s.rotation;
+        p.flags = fx.additive ? render::kParticleAdditive : 0u;
+        p.softness = fx.softness;
+        particles.push_back(p);
+    }
+    out.addParticles(particles.data(), particles.size());
+}
+
+u32 Player::particleCount() const { return static_cast<u32>(m->sparks.size()); }
 
 Vec3 Player::cameraShake(Vec3 focus) const {
     Vec3 offset{};
@@ -215,9 +343,13 @@ void Player::clear() {
     m->shakes.clear();
     m->flashes.clear();
     m->hitStopUntil = 0.0;
+    m->sparks.clear();
 }
 
-void Player::reload() { m->load(); }
+void Player::reload() {
+    m->load();
+    for (LoadedEffect& e : m->effects) m->loadEffect(e);
+}
 
 const std::vector<std::string>& Player::rowIds() const { return m->table.ids; }
 

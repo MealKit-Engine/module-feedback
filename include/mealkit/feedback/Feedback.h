@@ -9,6 +9,9 @@
 namespace mealkit::audio {
 class Engine;
 }
+namespace mealkit::render {
+class DrawList;
+}
 
 // 이벤트 → 연출 표 (docs/CODING_MODEL.md "시뮬레이션 이벤트에 소리·효과·흔들림 붙이기"): 타격감을 데이터로.
 // assets/feedback.table의 한 행 = 이벤트 종류(게임 이벤트 타입의 MEALKIT_ENUM 값 이름) → 소리 + 화면 흔들림 + 번쩍임 + 화면 정지.
@@ -32,7 +35,31 @@ MEALKIT_STRUCT(Reaction) {
     MEALKIT_FIELD(f32, flashSeconds, 0.12f, "Flash time (s)");
     MEALKIT_FIELD(Color, flashColor, (Color::rgb(255, 255, 255)), "Flash color");
     MEALKIT_FIELD(f32, hitStop, 0.0f, "Hit stop: view freezes (s)");
+    MEALKIT_FIELD(std::string, effect, {}, "Particle effect (assets/effects/<name>.fx)");
 };
+
+// 파티클 효과 하나 = assets/effects/<이름>.fx (docs/DECISIONS.md 2026-10-27 "파티클은 자체 런타임"). 한 번에 터지는 입자 묶음:
+// 화면 쪽 CPU 갱신 + 인스턴스 쿼드 (render::Particle). 값은 에디터 [연출] 패널의 효과 칸에서 고치고 미리보기로 본다
+MEALKIT_STRUCT(Effect) {
+    MEALKIT_FIELD(u32, count, 24, "Particles at full strength");
+    MEALKIT_FIELD(f32, lifetime, 0.6f, "Lifetime (s)");
+    MEALKIT_FIELD(f32, lifetimeRandom, 0.3f, "Lifetime random part (0 to 1)");
+    MEALKIT_FIELD(f32, radius, 0.1f, "Start inside this sphere (m)");
+    MEALKIT_FIELD(Vec3, direction, (Vec3{0.0f, 1.0f, 0.0f}), "Main direction");
+    MEALKIT_FIELD(f32, spread, 0.6f, "Spread (0 straight, 1 every way)");
+    MEALKIT_FIELD(f32, speed, 4.0f, "Speed (m/s)");
+    MEALKIT_FIELD(f32, speedRandom, 0.5f, "Speed random part (0 to 1)");
+    MEALKIT_FIELD(f32, gravity, 6.0f, "Gravity (m/s2, down)");
+    MEALKIT_FIELD(f32, drag, 2.0f, "Drag (1/s)");
+    MEALKIT_FIELD(f32, sizeStart, 0.25f, "Size at start (m)");
+    MEALKIT_FIELD(f32, sizeEnd, 0.05f, "Size at end (m)");
+    MEALKIT_FIELD(Color, colorStart, (Color::rgb(255, 220, 140)), "Color at start");
+    MEALKIT_FIELD(Color, colorEnd, (Color::rgb(255, 80, 20, 0)), "Color at end");
+    MEALKIT_FIELD(f32, softness, 0.6f, "Edge softness (0 to 1)");
+    MEALKIT_FIELD(f32, spin, 0.0f, "Spin (turns per second, random sign)");
+    MEALKIT_FIELD(bool, additive, true, "Additive (glow)");
+};
+inline constexpr const char* kEffectFolder = "effects"; // assets 기준, 파일은 <이름>.fx
 
 inline constexpr const char* kFeedbackTable = "feedback.table"; // assets 기준
 
@@ -52,6 +79,11 @@ public:
     }
     // 에디터 [연출] 패널의 미리보기: 행 이름으로 (세기 1, 위치 = 카메라 초점)
     void preview(const std::string& kind, Vec3 position);
+    // 효과 하나를 바로 띄운다 (에디터 효과 미리보기, 게임 화면 코드). 파일은 바뀌면 다시 읽는다
+    void playEffect(const std::string& name, Vec3 position, f32 strength = 1.0f);
+    // 살아 있는 파티클을 그릴 목록에 넣는다 (buildFrame 뒤, submit 전에 엔진이 부른다)
+    void addParticles(render::DrawList& out) const;
+    u32 particleCount() const;
 
     // 매 프레임 (엔진이 부른다): 시간, 표 다시 읽기(파일이 바뀌면)
     void update(f64 dt);

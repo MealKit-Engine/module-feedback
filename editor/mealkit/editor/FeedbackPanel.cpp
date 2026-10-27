@@ -2,6 +2,7 @@
 
 #include "mealkit/editor/FieldEditor.h"
 #include "mealkit/editor/Strings.h"
+#include "mealkit/core/TextFormat.h"
 #include "mealkit/feedback/Feedback.h"
 #include "mealkit/platform/Paths.h"
 
@@ -36,6 +37,8 @@ const char* kindName(const reflect::ValueInfo& v) {
 
 void FeedbackPanel::setProjectDirectory(const std::string& directory) {
     m_path = directory + "\\assets\\" + feedback::kFeedbackTable;
+    m_effectsDir = directory + "\\assets\\" + feedback::kEffectFolder;
+    m_effectName.clear();
     load();
 }
 
@@ -55,11 +58,78 @@ void FeedbackPanel::save() {
     m_dirty = false;
 }
 
+void FeedbackPanel::loadEffect(const std::string& name) {
+    m_effectName = name;
+    m_effect = {};
+    m_effectDirty = false;
+    std::string error;
+    const std::string path = m_effectsDir + "\\" + name + ".fx";
+    if (fileExists(path) && !reflect::loadTextFile(reflect::typeOf<feedback::Effect>(), &m_effect, path, text::kEffect, &error))
+        m_status = error;
+}
+
+void FeedbackPanel::saveEffect() {
+    m_effectDirty = false;
+    if (m_effectName.empty()) return;
+    createDirectories(m_effectsDir);
+    const std::string path = m_effectsDir + "\\" + m_effectName + ".fx";
+    if (!reflect::saveTextFile(reflect::typeOf<feedback::Effect>(), &m_effect, path, text::kEffect,
+                               "MealKit particle effect. Edit it in the editor's [Feedback] panel."))
+        m_status = trf("Could not save %s", path.c_str());
+}
+
+// [효과] 칸: 효과 파일 고르기·만들기, 값 고치기, 미리보기 (연출 행의 effect 열이 이 이름을 쓴다)
+void FeedbackPanel::drawEffects(feedback::Player* player, Vec3 previewAt) {
+    if (!ImGui::CollapsingHeader(tr("Effects"))) return;
+    std::vector<std::string> names;
+    for (const std::string& file : listFiles(m_effectsDir, ".fx")) names.push_back(file.substr(0, file.size() - 3));
+    ImGui::SetNextItemWidth(200.0f);
+    if (ImGui::BeginCombo("##effect", m_effectName.empty() ? tr("(choose an effect)") : m_effectName.c_str())) {
+        for (const std::string& n : names)
+            if (ImGui::Selectable(n.c_str(), n == m_effectName)) {
+                if (m_effectDirty) saveEffect();
+                loadEffect(n);
+            }
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!player || m_effectName.empty());
+    if (ImGui::Button(tr("Preview Effect")) && player) {
+        if (m_effectDirty) saveEffect();
+        player->reload();
+        player->playEffect(m_effectName, previewAt);
+    }
+    ImGui::EndDisabled();
+    ImGui::SetNextItemWidth(140.0f);
+    ImGui::InputText("##newEffect", m_newEffect, sizeof(m_newEffect));
+    ImGui::SameLine();
+    if (ImGui::Button(tr("New Effect"))) {
+        const std::string name = m_newEffect;
+        if (!data::validRowId(name) || std::find(names.begin(), names.end(), name) != names.end()) {
+            m_status = trf("'%s' cannot be an effect name (letters, digits, _ - . and unique)", name.c_str());
+        } else {
+            if (m_effectDirty) saveEffect();
+            m_effectName = name;
+            m_effect = {};
+            saveEffect();
+        }
+    }
+    if (!m_effectName.empty()) {
+        ImGui::TextDisabled("%s", trf("Use it in a reaction's effect column: %s", m_effectName.c_str()).c_str());
+        ImGui::PushID("effect");
+        ImGui::PushItemWidth(-ImGui::GetContentRegionAvail().x * 0.5f);
+        if (drawFields(reflect::typeOf<feedback::Effect>(), &m_effect)) m_effectDirty = true;
+        ImGui::PopItemWidth();
+        ImGui::PopID();
+    }
+}
+
 void FeedbackPanel::draw(feedback::Player* player, Vec3 previewAt, f64 dt, bool* open) {
-    if (m_dirty) { // 고치는 중에는 0.3초에 한 번까지 저장한다 (게임이 다시 읽어 바로 보인다)
+    if (m_dirty || m_effectDirty) { // 고치는 중에는 0.3초에 한 번까지 저장한다 (게임이 다시 읽어 바로 보인다)
         m_saveTimer += dt;
         if (m_saveTimer >= 0.3) {
-            save();
+            if (m_dirty) save();
+            if (m_effectDirty) saveEffect();
             m_saveTimer = 0.0;
         }
     }
@@ -157,6 +227,8 @@ void FeedbackPanel::draw(feedback::Player* player, Vec3 previewAt, f64 dt, bool*
     ImGui::SameLine();
     ImGui::SetNextItemWidth(100.0f);
     ImGui::InputText(tr("suffix for more rows"), m_suffix, sizeof(m_suffix));
+    ImGui::Separator();
+    drawEffects(player, previewAt);
     ImGui::EndChild();
     ImGui::End();
 }
