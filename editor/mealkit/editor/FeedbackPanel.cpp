@@ -78,7 +78,7 @@ void FeedbackPanel::saveEffect() {
         m_status = trf("Could not save %s", path.c_str());
 }
 
-// [효과] 칸: 효과 파일 고르기·만들기, 값 고치기, 미리보기 (연출 행의 effect 열이 이 이름을 쓴다)
+// [Effects] section: pick/create effect files, edit values, preview (the effect column of feedback rows uses this name)
 void FeedbackPanel::drawEffects(feedback::Player* player, Vec3 previewAt) {
     if (!ImGui::CollapsingHeader(tr("Effects"))) return;
     std::vector<std::string> names;
@@ -125,7 +125,7 @@ void FeedbackPanel::drawEffects(feedback::Player* player, Vec3 previewAt) {
 }
 
 void FeedbackPanel::draw(feedback::Player* player, Vec3 previewAt, f64 dt, bool* open) {
-    if (m_dirty || m_effectDirty) { // 고치는 중에는 0.3초에 한 번까지 저장한다 (게임이 다시 읽어 바로 보인다)
+    if (m_dirty || m_effectDirty) { // while editing, save at most once every 0.3 s (the game rereads it so it shows immediately)
         m_saveTimer += dt;
         if (m_saveTimer >= 0.3) {
             if (m_dirty) save();
@@ -143,7 +143,7 @@ void FeedbackPanel::draw(feedback::Player* player, Vec3 previewAt, f64 dt, bool*
         return;
     }
 
-    // ---- 왼쪽: 이벤트 종류 (게임 이벤트 타입의 첫 이름 있는 enum + 표에만 있는 이름)
+    // ---- Left: event kinds (the first named enum of the game event type + names only in the table)
     std::vector<std::string> kinds;
     const reflect::FieldInfo* kindField = nullptr;
     if (m_eventType)
@@ -168,7 +168,7 @@ void FeedbackPanel::draw(feedback::Player* player, Vec3 previewAt, f64 dt, bool*
     ImGui::EndChild();
     ImGui::SameLine();
 
-    // ---- 오른쪽: 고른 종류의 연출 행들
+    // ---- Right: feedback rows of the selected kind
     ImGui::BeginChild("##rows");
     ImGui::TextUnformatted(m_selectedKind.c_str());
     ImGui::SameLine();
@@ -180,7 +180,7 @@ void FeedbackPanel::draw(feedback::Player* player, Vec3 previewAt, f64 dt, bool*
             if (kindOf(id) == m_selectedKind) player->preview(id, previewAt);
     }
     ImGui::EndDisabled();
-    if (m_eventType) { // 연출 값에 고를 수 있는 이벤트 필드
+    if (m_eventType) { // event fields selectable in feedback values
         std::string fields;
         for (const reflect::FieldInfo& f : m_eventType->fields) {
             if (&f == kindField || !*kindName(*f.value)) continue;
@@ -213,7 +213,7 @@ void FeedbackPanel::draw(feedback::Player* player, Vec3 previewAt, f64 dt, bool*
     }
     ImGui::Separator();
     if (ImGui::Button(tr("Add Reaction")) && !m_selectedKind.empty()) {
-        // 첫 행은 종류 이름 그대로, 그다음은 "종류.접미사" (예: Fall.local)
+        // The first row is the kind name as is, then "kind.suffix" (e.g. Fall.local)
         std::string id = m_selectedKind;
         if (std::find(m_table.ids.begin(), m_table.ids.end(), id) != m_table.ids.end()) id += std::string(".") + m_suffix;
         if (!data::validRowId(id) || std::find(m_table.ids.begin(), m_table.ids.end(), id) != m_table.ids.end()) {

@@ -23,25 +23,25 @@ struct Shake {
     f32 seconds = 0.0f;
     f32 amplitude = 0.0f;
     f32 frequency = 0.0f;
-    f32 range = 0.0f; // 0 = 어디서나
+    f32 range = 0.0f; // 0 = anywhere
     bool positioned = false;
     Vec3 position;
-    f32 phase = 0.0f; // 흔들림마다 다른 모양
+    f32 phase = 0.0f; // different shape per shake
 };
 
 struct Flash {
     f64 start = 0.0;
     f32 seconds = 0.0f;
     f32 amount = 0.0f;
-    Vec3 color; // 선형
+    Vec3 color; // linear
 };
 
-// 살아 있는 입자 하나 (화면 쪽, 결정론 밖)
+// One live particle (view side, outside determinism)
 struct Spark {
     Vec3 position, velocity;
     f32 age = 0.0f, lifetime = 1.0f;
     f32 rotation = 0.0f, spin = 0.0f;
-    u32 effect = 0; // Player::Impl::effects 번호
+    u32 effect = 0; // Player::Impl::effects index
 };
 
 struct LoadedEffect {
@@ -64,12 +64,12 @@ u32 mixColor(Color a, Color b, f32 t) {
 Vec3 linearColor(Color c) {
     auto ch = [](u32 v) {
         const f32 s = static_cast<f32>(v & 0xFF) / 255.0f;
-        return s * s; // 셰이더와 같은 감마 2.0 근사
+        return s * s; // gamma 2.0 approximation, same as the shader
     };
     return {ch(c.value), ch(c.value >> 8), ch(c.value >> 16)};
 }
 
-// 이벤트 값의 필드 (경로) 읽기
+// Read an event value's field (path)
 bool readFloat(reflect::View event, const std::string& path, f32& out) {
     const reflect::ValueInfo* v = nullptr;
     void* data = nullptr;
@@ -98,7 +98,7 @@ bool readVec3(reflect::View event, const std::string& path, Vec3& out) {
     return true;
 }
 
-// 이벤트 종류의 이름: 첫 번째 이름 있는 enum 필드 (MEALKIT_ENUM)
+// Name of an event kind: the first named enum field (MEALKIT_ENUM)
 std::string kindName(reflect::View event) {
     for (const reflect::FieldInfo& f : event.type->fields)
         if (!f.value->enumNames.empty())
@@ -116,17 +116,17 @@ struct Player::Impl {
     f64 tableCheck = 0.0;
     f64 time = 0.0;
     f64 hitStopUntil = 0.0;
-    f32 shakeScale = 1.0f, flashScale = 1.0f; // 접근성 (플레이어 설정)
+    f32 shakeScale = 1.0f, flashScale = 1.0f; // accessibility (player settings)
     bool hitStopEnabled = true;
     std::vector<Shake> shakes;
     std::vector<Flash> flashes;
     u32 shakeCount = 0;
     std::vector<LoadedEffect> effects;
     std::vector<Spark> sparks;
-    Pcg32 rng{0x6d65616c6b6974ull}; // 연출용 (시뮬레이션 난수와 섞지 않는다)
+    Pcg32 rng{0x6d65616c6b6974ull}; // for feedback (not mixed with simulation random numbers)
     f64 effectCheck = 0.0;
 
-    // 이름의 효과 (처음이면 읽는다). 없는 파일은 경고하고 빈 효과로 둔다 (파일이 생기면 pollEffects가 읽는다)
+    // Effect by name (read the first time). Missing files warn and become an empty effect (pollEffects reads the file when it appears)
     u32 effectIndex(const std::string& name) {
         for (u32 i = 0; i < effects.size(); ++i)
             if (effects[i].name == name) return i;
@@ -161,7 +161,7 @@ struct Player::Impl {
         const f32 len = length(fx.direction);
         const Vec3 dir = len > 1e-4f ? fx.direction * (1.0f / len) : Vec3{0, 1, 0};
         for (u32 i = 0; i < count && sparks.size() < kMaxSparks; ++i) {
-            // 공 안의 고른 점 (거절 표본)과 방향: 주 방향과 무작위 방향을 spread만큼 섞는다
+            // Uniform point in a sphere (rejection sampling) and direction: mixes the main direction and a random direction by spread
             Vec3 ball;
             do {
                 ball = Vec3{rng.range(-1, 1), rng.range(-1, 1), rng.range(-1, 1)};
@@ -238,7 +238,7 @@ Player::Player(audio::Engine& audio) : m(new Impl(audio)) { m->load(); }
 
 Player::~Player() { delete m; }
 
-// 행 id가 종류 이름이거나 "종류.무엇"이면 그 종류의 연출이다 (한 종류에 여러 줄: "Fall", "Fall.local")
+// A row whose id is the kind name or "kind.something" is feedback for that kind (multiple rows per kind: "Fall", "Fall.local")
 void Player::trigger(reflect::View event, u8 localPlayer) {
     if (!event.type || !event.data) return;
     const std::string kind = kindName(event);
@@ -276,7 +276,7 @@ void Player::update(f64 dt) {
     std::erase_if(m->shakes, [&](const Shake& s) { return m->time - s.start >= s.seconds; });
     std::erase_if(m->flashes, [&](const Flash& f) { return m->time - f.start >= f.seconds; });
     m->pollEffects();
-    if (!hitStop()) m->step(static_cast<f32>(std::min(dt, 0.1))); // 화면 정지 중에는 파티클도 멈춘다
+    if (!hitStop()) m->step(static_cast<f32>(std::min(dt, 0.1))); // particles also stop during hitstop
 }
 
 void Player::playEffect(const std::string& name, Vec3 position, f32 strength) {
@@ -313,7 +313,7 @@ Vec3 Player::cameraShake(Vec3 focus) const {
         if (s.positioned && s.range > 0.0f)
             amount *= std::clamp(1.0f - length(s.position - focus) / s.range, 0.0f, 1.0f);
         const f32 w = kTwoPi * s.frequency * t + s.phase;
-        // 축마다 다른 주파수의 사인 합 (부드러운 떨림)
+        // Sum of sines with different frequencies per axis (smooth tremor)
         offset += Vec3{std::sin(w), std::sin(w * 1.31f + 1.1f), std::sin(w * 0.87f + 2.3f)} * amount;
     }
     return offset * m->shakeScale;

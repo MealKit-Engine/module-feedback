@@ -13,13 +13,13 @@ namespace mealkit::render {
 class DrawList;
 }
 
-// 이벤트 → 연출 표 (docs/CODING_MODEL.md "시뮬레이션 이벤트에 소리·효과·흔들림 붙이기"): 타격감을 데이터로.
-// assets/feedback.table의 한 행 = 이벤트 종류(게임 이벤트 타입의 MEALKIT_ENUM 값 이름) → 소리 + 화면 흔들림 + 번쩍임 + 화면 정지.
-// 게임은 틱 이벤트마다 ctx.feedback.trigger(event, localPlayer)만 부르고, 무엇을 할지는 표가 정한다(에디터 [연출] 패널).
-// 전부 화면 쪽이다: 화면 정지(히트 스톱)도 화면만 멈추고 시뮬레이션은 계속 돈다(락스텝). 표는 콘텐츠 해시 밖이라 플레이 중에 고치면 바로 보인다.
+// Event → feedback table (docs/CODING_MODEL.md "Attaching sound, effects, and shake to simulation events"): game feel as data.
+// One row of assets/feedback.table = event kind (MEALKIT_ENUM value name of the game event type) → sound + screen shake + flash + hitstop.
+// The game just calls ctx.feedback.trigger(event, localPlayer) per tick event, and the table decides what happens (editor [Feedback] panel).
+// It's all view side: hitstop only freezes the screen while the simulation keeps running (lockstep). The table is outside the content hash, so edits during play show immediately.
 namespace mealkit::feedback {
 
-// 연출 한 행. 필드 설명은 에디터 글자라 영어 (한국어는 engine/res/strings/ko.txt)
+// One feedback row. Field descriptions are editor text, so English (Korean in engine/res/strings/ko.txt)
 MEALKIT_STRUCT(Reaction) {
     MEALKIT_FIELD(std::string, players, "any", "Whose events (any, local, others)");
     MEALKIT_FIELD(std::string, strengthFrom, {}, "Strength from event field (empty is full)");
@@ -38,8 +38,8 @@ MEALKIT_STRUCT(Reaction) {
     MEALKIT_FIELD(std::string, effect, {}, "Particle effect (assets/effects/<name>.fx)");
 };
 
-// 파티클 효과 하나 = assets/effects/<이름>.fx (docs/DECISIONS.md 2026-10-27 "파티클은 자체 런타임"). 한 번에 터지는 입자 묶음:
-// 화면 쪽 CPU 갱신 + 인스턴스 쿼드 (render::Particle). 값은 에디터 [연출] 패널의 효과 칸에서 고치고 미리보기로 본다
+// One particle effect = assets/effects/<name>.fx (docs/DECISIONS.md 2026-10-27 "Particles use our own runtime"). A burst of particles emitted at once:
+// view-side CPU update + instanced quads (render::Particle). Values are edited in the effects section of the editor [Feedback] panel and checked with preview
 MEALKIT_STRUCT(Effect) {
     MEALKIT_FIELD(u32, count, 24, "Particles at full strength");
     MEALKIT_FIELD(f32, lifetime, 0.6f, "Lifetime (s)");
@@ -59,9 +59,9 @@ MEALKIT_STRUCT(Effect) {
     MEALKIT_FIELD(f32, spin, 0.0f, "Spin (turns per second, random sign)");
     MEALKIT_FIELD(bool, additive, true, "Additive (glow)");
 };
-inline constexpr const char* kEffectFolder = "effects"; // assets 기준, 파일은 <이름>.fx
+inline constexpr const char* kEffectFolder = "effects"; // relative to assets, files are <name>.fx
 
-inline constexpr const char* kFeedbackTable = "feedback.table"; // assets 기준
+inline constexpr const char* kFeedbackTable = "feedback.table"; // relative to assets
 
 class Player {
 public:
@@ -70,34 +70,34 @@ public:
     Player(const Player&) = delete;
     Player& operator=(const Player&) = delete;
 
-    // 틱 이벤트 하나. 이벤트 타입은 MEALKIT_STRUCT이고 종류는 MEALKIT_ENUM 필드(첫 번째 이름 있는 enum)다.
-    // localPlayer: 이 창의 플레이어 (players가 local/others인 행, 이벤트의 "player" 필드와 비교)
+    // One tick event. The event type is a MEALKIT_STRUCT and its kind is a MEALKIT_ENUM field (the first named enum).
+    // localPlayer: this window's player (for rows whose players is local/others, compared with the event's "player" field)
     void trigger(reflect::View event, u8 localPlayer);
     template <class E>
     void trigger(const E& event, u8 localPlayer) {
         trigger({&reflect::typeOf<E>(), &event}, localPlayer);
     }
-    // 에디터 [연출] 패널의 미리보기: 행 이름으로 (세기 1, 위치 = 카메라 초점)
+    // Preview for the editor [Feedback] panel: by row name (strength 1, position = camera focus)
     void preview(const std::string& kind, Vec3 position);
-    // 효과 하나를 바로 띄운다 (에디터 효과 미리보기, 게임 화면 코드). 파일은 바뀌면 다시 읽는다
+    // Spawns one effect right away (editor effect preview, game view code). The file is reread when it changes
     void playEffect(const std::string& name, Vec3 position, f32 strength = 1.0f);
-    // 살아 있는 파티클을 그릴 목록에 넣는다 (buildFrame 뒤, submit 전에 엔진이 부른다)
+    // Puts live particles into the draw list (the engine calls this after buildFrame, before submit)
     void addParticles(render::DrawList& out) const;
     u32 particleCount() const;
 
-    // 매 프레임 (엔진이 부른다): 시간, 표 다시 읽기(파일이 바뀌면)
+    // Every frame (called by the engine): time, reload the table (if the file changed)
     void update(f64 dt);
-    // 카메라에 더할 흔들림 (focus: 카메라가 보는 점, 거리 감쇠용). 게임 카메라가 눈과 초점에 같이 더한다
+    // Shake to add to the camera (focus: point the camera looks at, for distance attenuation). The game camera adds it to both eye and focus
     Vec3 cameraShake(Vec3 focus) const;
-    // 화면 번쩍임: 엔진이 FrameParams::tintColor/tintAmount에 넣는다
+    // Screen flash: the engine puts it into FrameParams::tintColor/tintAmount
     void screenTint(Vec3& color, f32& amount) const;
-    // 화면 정지 중 (게임 화면 쪽 시계·보간·효과를 멈춘다. 시뮬레이션은 계속)
+    // During hitstop (freezes game view clocks/interpolation/effects. The simulation continues)
     bool hitStop() const;
-    void clear(); // 진행 중인 흔들림·번쩍임·정지를 지운다 (플레이를 멈출 때)
-    // 접근성 (플레이어 설정): 흔들림·번쩍임 배율 0..1, 화면 정지 켜기. 표는 그대로이고 결과에만 곱한다
+    void clear(); // clears ongoing shake/flash/hitstop (when stopping play)
+    // Accessibility (player settings): shake/flash scale 0..1, hitstop on/off. The table stays the same; only results are multiplied
     void setAccessibility(f32 shakeScale, f32 flashScale, bool hitStop);
 
-    void reload(); // 표를 지금 다시 읽는다 (에디터가 저장한 뒤)
+    void reload(); // reread the table now (after the editor saves)
     const std::vector<std::string>& rowIds() const;
 
 private:
