@@ -77,8 +77,9 @@ public:
     void trigger(const E& event, u8 localPlayer) {
         trigger({&reflect::typeOf<E>(), &event}, localPlayer);
     }
-    // Preview for the editor [Feedback] panel: by row name (strength 1, position = camera focus)
-    void preview(const std::string& kind, Vec3 position);
+    // By row name (strength 1): animation events (asset::updateAnim) and the editor [Feedback] panel preview (position = camera focus)
+    void play(const std::string& kind, Vec3 position);
+    void preview(const std::string& kind, Vec3 position) { play(kind, position); }
     // Spawns one effect right away (editor effect preview, game view code). The file is reread when it changes
     void playEffect(const std::string& name, Vec3 position, f32 strength = 1.0f);
     // Puts live particles into the draw list (the engine calls this after buildFrame, before submit)

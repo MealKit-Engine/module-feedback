@@ -263,7 +263,7 @@ void Player::trigger(reflect::View event, u8 localPlayer) {
     }
 }
 
-void Player::preview(const std::string& kind, Vec3 position) {
+void Player::play(const std::string& kind, Vec3 position) {
     const u32 row = m->table.find(kind);
     if (row == kNoRow) return;
     const Reaction& r = m->table[row];
