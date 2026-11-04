@@ -105,7 +105,7 @@ void FeedbackPanel::drawEffects(feedback::Player* player, Vec3 previewAt) {
     std::vector<std::string> names;
     for (const std::string& file : listFiles(m_effectsDir, ".fx")) names.push_back(file.substr(0, file.size() - 3));
     ImGui::SetNextItemWidth(200.0f);
-    if (ImGui::BeginCombo("##effect", m_effectName.empty() ? tr("(choose an effect)") : m_effectName.c_str())) {
+    if (beginCombo("##effect", m_effectName.empty() ? tr("(choose an effect)") : m_effectName.c_str())) {
         for (const std::string& n : names)
             if (ImGui::Selectable(n.c_str(), n == m_effectName)) {
                 if (m_effectDirty) saveEffect();
