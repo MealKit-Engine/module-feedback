@@ -14,8 +14,6 @@
 namespace mealkit::editor {
 namespace {
 
-constexpr const char* kFeedbackWindow = "Feedback###Feedback";
-
 // "Fall", "Fall.local" → "Fall"
 std::string kindOf(const std::string& rowId) {
     const size_t dot = rowId.find('.');
@@ -49,6 +47,19 @@ void FeedbackPanel::load() {
     if (fileExists(m_path)) data::loadTableData(*m_table.rowType, m_path, m_table, &warnings);
     m_dirty = false;
     m_status = warnings;
+    data::TableText now;
+    data::tableToText(m_table, now);
+    m_undo.reset(std::move(now));
+}
+
+void FeedbackPanel::step(bool back) {
+    data::TableText text;
+    if (!m_table.rowType || !m_undo.step(back, text)) return;
+    const reflect::TypeInfo* rowType = m_table.rowType;
+    m_table = {};
+    std::string warnings;
+    data::tableFromText(*rowType, text, m_table, &warnings);
+    m_dirty = true;
 }
 
 void FeedbackPanel::save() {
@@ -124,7 +135,7 @@ void FeedbackPanel::drawEffects(feedback::Player* player, Vec3 previewAt) {
     }
 }
 
-void FeedbackPanel::draw(feedback::Player* player, Vec3 previewAt, f64 dt, bool* open) {
+void FeedbackPanel::update(f64 dt) {
     if (m_dirty || m_effectDirty) { // while editing, save at most once every 0.3 s (the game rereads it so it shows immediately)
         m_saveTimer += dt;
         if (m_saveTimer >= 0.3) {
@@ -133,15 +144,10 @@ void FeedbackPanel::draw(feedback::Player* player, Vec3 previewAt, f64 dt, bool*
             m_saveTimer = 0.0;
         }
     }
-    ImGui::SetNextWindowSize(ImVec2(640.0f, 520.0f), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin(trl(kFeedbackWindow), open)) {
-        ImGui::End();
-        return;
-    }
-    if (m_path.empty()) {
-        ImGui::End();
-        return;
-    }
+}
+
+void FeedbackPanel::drawContent(feedback::Player* player, Vec3 previewAt) {
+    if (m_path.empty()) return;
 
     // ---- Left: event kinds (the first named enum of the game event type + names only in the table)
     std::vector<std::string> kinds;
@@ -201,7 +207,10 @@ void FeedbackPanel::draw(feedback::Player* player, Vec3 previewAt, f64 dt, bool*
         if (ImGui::SmallButton(tr("Delete"))) remove = static_cast<int>(i);
         if (openRow) {
             ImGui::PushItemWidth(-ImGui::GetContentRegionAvail().x * 0.5f);
-            if (drawFields(*m_table.rowType, m_table.rows[i].data())) m_dirty = true;
+            if (drawFields(*m_table.rowType, m_table.rows[i].data())) {
+                m_dirty = true;
+                m_undo.mark();
+            }
             ImGui::PopItemWidth();
         }
         ImGui::PopID();
@@ -210,6 +219,7 @@ void FeedbackPanel::draw(feedback::Player* player, Vec3 previewAt, f64 dt, bool*
         m_table.ids.erase(m_table.ids.begin() + remove);
         m_table.rows.erase(m_table.rows.begin() + remove);
         m_dirty = true;
+        m_undo.mark();
     }
     ImGui::Separator();
     if (ImGui::Button(tr("Add Reaction")) && !m_selectedKind.empty()) {
@@ -222,6 +232,7 @@ void FeedbackPanel::draw(feedback::Player* player, Vec3 previewAt, f64 dt, bool*
             m_table.ids.push_back(id);
             m_table.rows.emplace_back(*m_table.rowType);
             m_dirty = true;
+            m_undo.mark();
         }
     }
     ImGui::SameLine();
@@ -230,7 +241,11 @@ void FeedbackPanel::draw(feedback::Player* player, Vec3 previewAt, f64 dt, bool*
     ImGui::Separator();
     drawEffects(player, previewAt);
     ImGui::EndChild();
-    ImGui::End();
+    m_undo.settle(ImGui::IsAnyItemActive(), [this] {
+        data::TableText now;
+        data::tableToText(m_table, now);
+        return now;
+    });
 }
 
 } // namespace mealkit::editor
