@@ -11,6 +11,7 @@ class Engine;
 }
 namespace mealkit::render {
 class DrawList;
+struct PointLight;
 }
 
 // Event → feedback table (docs/CODING_MODEL.md "Attaching sound, effects, and shake to simulation events"): game feel as data.
@@ -36,6 +37,18 @@ MEALKIT_STRUCT(Reaction) {
     MEALKIT_FIELD(Color, flashColor, (Color::rgb(255, 255, 255)), "Flash color|showIf=flash>0");
     MEALKIT_FIELD(f32, hitStop, 0.0f, "Hit stop: view freezes (s)");
     MEALKIT_FIELD(std::string, effect, {}, "Particle effect (assets/effects/<name>.fx)|pick=effects:.fx");
+    MEALKIT_FIELD(std::string, playersFrom, {}, "Event field compared by players (empty is player)|showIf=players");
+    MEALKIT_FIELD(f32, light, 0.0f, "Event light intensity at full strength");
+    MEALKIT_FIELD(Color, lightColor, (Color::rgb(255, 255, 255)), "Light color|showIf=light>0");
+    MEALKIT_FIELD(f32, lightRange, 4.0f, "Light range (m)|showIf=light>0");
+    MEALKIT_FIELD(f32, lightSeconds, 0.15f, "Light fade time (s)|showIf=light>0");
+    MEALKIT_FIELD(Vec3, lightOffset, (Vec3{0.0f, 0.5f, 0.0f}), "Light offset from the event position|showIf=light>0");
+    MEALKIT_FIELD(f32, bloomKick, 0.0f, "Bloom added at full strength");
+    MEALKIT_FIELD(f32, exposureKick, 0.0f, "Exposure added at full strength (EV)");
+    MEALKIT_FIELD(f32, kickSeconds, 0.2f, "Bloom and exposure kick time (s)");
+    MEALKIT_FIELD(f32, hitFlash, 0.0f, "Object flash at full strength (0 to 1)");
+    MEALKIT_FIELD(f32, hitFlashSeconds, 0.1f, "Object flash time (s)|showIf=hitFlash>0");
+    MEALKIT_FIELD(std::string, targetFrom, "player", "Event field with the id that flashes|showIf=hitFlash>0");
 };
 
 // One particle effect = assets/effects/<name>.fx (docs/DECISIONS.md 2026-10-27 "Particles use our own runtime"). A burst of particles emitted at once:
@@ -92,6 +105,12 @@ public:
     Vec3 cameraShake(Vec3 focus) const;
     // Screen flash: the engine puts it into FrameParams::tintColor/tintAmount
     void screenTint(Vec3& color, f32& amount) const;
+    // Event lights, appended to out (the engine adds them to FrameParams::lights)
+    void addLights(std::vector<render::PointLight>& out) const;
+    // Bloom and exposure kicks to add to the frame's post values (the engine does this)
+    void postKick(f32& bloom, f32& exposure) const;
+    // Flash amount 0..1 of an id from the row's targetFrom field. View code passes it to render::instanceFlash when drawing that object
+    f32 objectFlash(u32 id) const;
     // During hitstop (freezes game view clocks/interpolation/effects. The simulation continues)
     bool hitStop() const;
     void clear(); // clears ongoing shake/flash/hitstop (when stopping play)

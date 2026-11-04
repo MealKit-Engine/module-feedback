@@ -7,6 +7,7 @@
 #include "mealkit/core/TextFormat.h"
 #include "mealkit/platform/Paths.h"
 #include "mealkit/render/DrawList.h"
+#include "mealkit/render/Renderer.h"
 
 #include <algorithm>
 #include <cmath>
@@ -34,6 +35,28 @@ struct Flash {
     f32 seconds = 0.0f;
     f32 amount = 0.0f;
     Vec3 color; // linear
+};
+
+struct EventLight {
+    f64 start = 0.0;
+    f32 seconds = 0.0f;
+    f32 range = 0.0f;
+    Vec3 position;
+    Vec3 color; // linear × intensity
+};
+constexpr size_t kMaxEventLights = 32; // the oldest goes first
+
+struct PostKick {
+    f64 start = 0.0;
+    f32 seconds = 0.0f;
+    f32 bloom = 0.0f, exposure = 0.0f;
+};
+
+struct ObjectFlash {
+    f64 start = 0.0;
+    f32 seconds = 0.0f;
+    f32 amount = 0.0f;
+    u32 id = 0;
 };
 
 // One live particle (view side, outside determinism)
@@ -120,6 +143,9 @@ struct Player::Impl {
     bool hitStopEnabled = true;
     std::vector<Shake> shakes;
     std::vector<Flash> flashes;
+    std::vector<EventLight> lights;
+    std::vector<PostKick> kicks;
+    std::vector<ObjectFlash> objectFlashes;
     u32 shakeCount = 0;
     std::vector<LoadedEffect> effects;
     std::vector<Spark> sparks;
@@ -214,7 +240,15 @@ struct Player::Impl {
         }
     }
 
-    void fire(const Reaction& r, f32 strength, bool positioned, Vec3 position, f32 rawStrength) {
+    void fire(const Reaction& r, f32 strength, bool positioned, Vec3 position, f32 rawStrength, const u32* target = nullptr) {
+        if (r.light > 0.0f && r.lightSeconds > 0.0f && positioned) {
+            if (lights.size() >= kMaxEventLights) lights.erase(lights.begin());
+            lights.push_back({time, r.lightSeconds, r.lightRange, position + r.lightOffset, linearColor(r.lightColor) * (r.light * strength)});
+        }
+        if ((r.bloomKick != 0.0f || r.exposureKick != 0.0f) && r.kickSeconds > 0.0f)
+            kicks.push_back({time, r.kickSeconds, r.bloomKick * strength, r.exposureKick * strength});
+        if (r.hitFlash > 0.0f && r.hitFlashSeconds > 0.0f && target)
+            objectFlashes.push_back({time, r.hitFlashSeconds, std::clamp(r.hitFlash * strength, 0.0f, 1.0f), *target});
         if (!r.sound.empty()) {
             if (positioned) {
                 if (r.soundParam.empty()) audio.play(r.sound, position);
@@ -250,7 +284,7 @@ void Player::trigger(reflect::View event, u8 localPlayer) {
         const Reaction& r = m->table[row];
         if (r.players != "any") {
             f32 player = -1.0f;
-            readFloat(event, "player", player);
+            readFloat(event, r.playersFrom.empty() ? std::string("player") : r.playersFrom, player);
             const bool local = player == static_cast<f32>(localPlayer);
             if ((r.players == "local" && !local) || (r.players == "others" && local)) continue;
         }
@@ -259,7 +293,10 @@ void Player::trigger(reflect::View event, u8 localPlayer) {
         const f32 strength = hasStrength && r.strengthFull != 0.0f ? std::clamp(raw / r.strengthFull, 0.0f, 1.0f) : 1.0f;
         Vec3 position;
         const bool positioned = readVec3(event, r.positionFrom, position);
-        m->fire(r, strength, positioned, position, raw);
+        f32 targetValue = 0.0f;
+        const bool hasTarget = readFloat(event, r.targetFrom, targetValue);
+        const u32 target = static_cast<u32>(targetValue);
+        m->fire(r, strength, positioned, position, raw, hasTarget ? &target : nullptr);
     }
 }
 
@@ -275,6 +312,9 @@ void Player::update(f64 dt) {
     m->poll();
     std::erase_if(m->shakes, [&](const Shake& s) { return m->time - s.start >= s.seconds; });
     std::erase_if(m->flashes, [&](const Flash& f) { return m->time - f.start >= f.seconds; });
+    std::erase_if(m->lights, [&](const EventLight& l) { return m->time - l.start >= l.seconds; });
+    std::erase_if(m->kicks, [&](const PostKick& k) { return m->time - k.start >= k.seconds; });
+    std::erase_if(m->objectFlashes, [&](const ObjectFlash& f) { return m->time - f.start >= f.seconds; });
     m->pollEffects();
     if (!hitStop()) m->step(static_cast<f32>(std::min(dt, 0.1))); // particles also stop during hitstop
 }
@@ -331,6 +371,35 @@ void Player::screenTint(Vec3& color, f32& amount) const {
     amount *= m->flashScale;
 }
 
+void Player::addLights(std::vector<render::PointLight>& out) const {
+    for (const EventLight& l : m->lights) {
+        const f32 left = 1.0f - static_cast<f32>((m->time - l.start) / l.seconds);
+        render::PointLight light;
+        light.position = l.position;
+        light.range = l.range;
+        light.color = l.color * (left * left * m->flashScale);
+        out.push_back(light);
+    }
+}
+
+void Player::postKick(f32& bloom, f32& exposure) const {
+    f32 addBloom = 0.0f, addExposure = 0.0f; // strongest wins
+    for (const PostKick& k : m->kicks) {
+        const f32 left = 1.0f - static_cast<f32>((m->time - k.start) / k.seconds);
+        addBloom = std::max(addBloom, k.bloom * left);
+        if (std::abs(k.exposure * left) > std::abs(addExposure)) addExposure = k.exposure * left;
+    }
+    bloom += addBloom * m->flashScale;
+    exposure += addExposure * m->flashScale;
+}
+
+f32 Player::objectFlash(u32 id) const {
+    f32 amount = 0.0f;
+    for (const ObjectFlash& f : m->objectFlashes)
+        if (f.id == id) amount = std::max(amount, f.amount * (1.0f - static_cast<f32>((m->time - f.start) / f.seconds)));
+    return amount * m->flashScale;
+}
+
 bool Player::hitStop() const { return m->hitStopEnabled && m->time < m->hitStopUntil; }
 
 void Player::setAccessibility(f32 shakeScale, f32 flashScale, bool hitStop) {
@@ -342,6 +411,9 @@ void Player::setAccessibility(f32 shakeScale, f32 flashScale, bool hitStop) {
 void Player::clear() {
     m->shakes.clear();
     m->flashes.clear();
+    m->lights.clear();
+    m->kicks.clear();
+    m->objectFlashes.clear();
     m->hitStopUntil = 0.0;
     m->sparks.clear();
 }
