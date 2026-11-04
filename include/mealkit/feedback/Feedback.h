@@ -25,7 +25,7 @@ MEALKIT_STRUCT(Reaction) {
     MEALKIT_FIELD(std::string, strengthFrom, {}, "Strength from event field (empty is full)");
     MEALKIT_FIELD(f32, strengthFull, 1.0f, "Field value at full strength");
     MEALKIT_FIELD(std::string, positionFrom, "position", "Position from event field (empty is everywhere)");
-    MEALKIT_FIELD(std::string, sound, {}, "Sound event");
+    MEALKIT_FIELD(std::string, sound, {}, "Sound event|pick=sound");
     MEALKIT_FIELD(std::string, soundParam, {}, "Sound parameter set to the strength field");
     MEALKIT_FIELD(f32, shake, 0.0f, "Camera shake at full strength (m)");
     MEALKIT_FIELD(f32, shakeSeconds, 0.25f, "Shake time (s)");
@@ -35,7 +35,7 @@ MEALKIT_STRUCT(Reaction) {
     MEALKIT_FIELD(f32, flashSeconds, 0.12f, "Flash time (s)");
     MEALKIT_FIELD(Color, flashColor, (Color::rgb(255, 255, 255)), "Flash color");
     MEALKIT_FIELD(f32, hitStop, 0.0f, "Hit stop: view freezes (s)");
-    MEALKIT_FIELD(std::string, effect, {}, "Particle effect (assets/effects/<name>.fx)");
+    MEALKIT_FIELD(std::string, effect, {}, "Particle effect (assets/effects/<name>.fx)|pick=effects:.fx");
 };
 
 // One particle effect = assets/effects/<name>.fx (docs/DECISIONS.md 2026-10-27 "Particles use our own runtime"). A burst of particles emitted at once:
