@@ -9,7 +9,7 @@
 
 // Feedback page of the editor [Data] window: choose feedback (sound/shake/flash/hitstop) per event kind (assets/feedback.table).
 // Left shows kind names of the game event type (GameClass::EventType), right the feedback rows of the selected kind (multiple rows per kind like "Fall.local").
-// The [Effects] section below picks particle effects (assets/effects/<name>.fx) and edits values (autosaved together, [Preview Effect]).
+// The [Effects] page picks particle effects (assets/effects/<name>.fx) and edits values (autosaved together, [Preview Effect]).
 // Edits are saved after 0.3 s and the game's feedback::Player rereads the file so they show immediately during play. [Preview] fires one right now.
 namespace mealkit::editor {
 
@@ -22,11 +22,13 @@ public:
     void drawContent(feedback::Player* player, Vec3 previewAt);
     bool canStep(bool back) const { return m_undo.canStep(back); } // reactions; effect files autosave without undo
     void step(bool back);
+    void drawEffects(feedback::Player* player, Vec3 previewAt); // [Data] page
+    bool canStepEffect(bool back) const { return m_effectUndo.canStep(back); }
+    void stepEffect(bool back);
 
 private:
     void load();
     void save();
-    void drawEffects(feedback::Player* player, Vec3 previewAt);
     void loadEffect(const std::string& name);
     void saveEffect();
 
@@ -44,6 +46,7 @@ private:
     std::string m_effectName; // selected effect (empty = none)
     feedback::Effect m_effect;
     bool m_effectDirty = false;
+    UndoStack<reflect::TextFields> m_effectUndo;
     char m_newEffect[48] = "spark";
 };
 

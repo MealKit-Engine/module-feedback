@@ -77,6 +77,17 @@ void FeedbackPanel::loadEffect(const std::string& name) {
     const std::string path = m_effectsDir + "\\" + name + ".fx";
     if (fileExists(path) && !reflect::loadTextFile(reflect::typeOf<feedback::Effect>(), &m_effect, path, text::kEffect, &error))
         m_status = error;
+    reflect::TextFields now;
+    reflect::toText(reflect::typeOf<feedback::Effect>(), &m_effect, now);
+    m_effectUndo.reset(std::move(now));
+}
+
+void FeedbackPanel::stepEffect(bool back) {
+    reflect::TextFields text;
+    if (m_effectName.empty() || !m_effectUndo.step(back, text)) return;
+    m_effect = {};
+    reflect::fromText(reflect::typeOf<feedback::Effect>(), &m_effect, text);
+    m_effectDirty = true;
 }
 
 void FeedbackPanel::saveEffect() {
@@ -91,7 +102,6 @@ void FeedbackPanel::saveEffect() {
 
 // [Effects] section: pick/create effect files, edit values, preview (the effect column of feedback rows uses this name)
 void FeedbackPanel::drawEffects(feedback::Player* player, Vec3 previewAt) {
-    if (!sectionHeader(tr("Effects"))) return;
     std::vector<std::string> names;
     for (const std::string& file : listFiles(m_effectsDir, ".fx")) names.push_back(file.substr(0, file.size() - 3));
     ImGui::SetNextItemWidth(200.0f);
@@ -123,14 +133,25 @@ void FeedbackPanel::drawEffects(feedback::Player* player, Vec3 previewAt) {
             m_effectName = name;
             m_effect = {};
             saveEffect();
+            reflect::TextFields now;
+            reflect::toText(reflect::typeOf<feedback::Effect>(), &m_effect, now);
+            m_effectUndo.reset(std::move(now));
         }
     }
     if (!m_effectName.empty()) {
         ImGui::TextDisabled("%s", trf("Use it in a reaction's effect column: %s", m_effectName.c_str()).c_str());
         ImGui::PushID("effect");
         ImGui::PushItemWidth(-ImGui::GetContentRegionAvail().x * 0.5f);
-        if (drawFields(reflect::typeOf<feedback::Effect>(), &m_effect)) m_effectDirty = true;
+        if (drawFields(reflect::typeOf<feedback::Effect>(), &m_effect)) {
+            m_effectDirty = true;
+            m_effectUndo.mark();
+        }
         ImGui::PopItemWidth();
+        m_effectUndo.settle(ImGui::IsAnyItemActive(), [this] {
+            reflect::TextFields now;
+            reflect::toText(reflect::typeOf<feedback::Effect>(), &m_effect, now);
+            return now;
+        });
         ImGui::PopID();
     }
 }
@@ -238,8 +259,6 @@ void FeedbackPanel::drawContent(feedback::Player* player, Vec3 previewAt) {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(100.0f);
     ImGui::InputText(tr("suffix for more rows"), m_suffix, sizeof(m_suffix));
-    ImGui::Separator();
-    drawEffects(player, previewAt);
     ImGui::EndChild();
     m_undo.settle(ImGui::IsAnyItemActive(), [this] {
         data::TableText now;
