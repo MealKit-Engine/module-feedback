@@ -80,7 +80,7 @@ void FeedbackPanel::saveEffect() {
 
 // [Effects] section: pick/create effect files, edit values, preview (the effect column of feedback rows uses this name)
 void FeedbackPanel::drawEffects(feedback::Player* player, Vec3 previewAt) {
-    if (!ImGui::CollapsingHeader(tr("Effects"))) return;
+    if (!sectionHeader(tr("Effects"))) return;
     std::vector<std::string> names;
     for (const std::string& file : listFiles(m_effectsDir, ".fx")) names.push_back(file.substr(0, file.size() - 3));
     ImGui::SetNextItemWidth(200.0f);
@@ -196,7 +196,7 @@ void FeedbackPanel::draw(feedback::Player* player, Vec3 previewAt, f64 dt, bool*
     for (size_t i = 0; i < m_table.ids.size(); ++i) {
         if (kindOf(m_table.ids[i]) != m_selectedKind) continue;
         ImGui::PushID(static_cast<int>(i));
-        const bool openRow = ImGui::CollapsingHeader(m_table.ids[i].c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+        const bool openRow = sectionHeader(m_table.ids[i].c_str(), ImGuiTreeNodeFlags_DefaultOpen);
         ImGui::SameLine(ImGui::GetContentRegionAvail().x - 60.0f);
         if (ImGui::SmallButton(tr("Delete"))) remove = static_cast<int>(i);
         if (openRow) {
