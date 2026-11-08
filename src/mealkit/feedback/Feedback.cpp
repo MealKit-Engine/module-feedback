@@ -1,6 +1,8 @@
 #include "mealkit/feedback/Feedback.h"
 
+#if MEALKIT_HAS_AUDIO
 #include "mealkit/audio/Audio.h"
+#endif
 #include "mealkit/core/Log.h"
 #include "mealkit/data/Tables.h"
 #include "mealkit/core/Random.h"
@@ -132,7 +134,7 @@ std::string kindName(reflect::View event) {
 } // namespace
 
 struct Player::Impl {
-    audio::Engine& audio;
+    audio::Engine* audio = nullptr; // null: rows' sounds are skipped
     sim::Table<Reaction> table;
     std::string tablePath;
     unsigned long long tableTime = 0;
@@ -220,7 +222,7 @@ struct Player::Impl {
         std::erase_if(sparks, [](const Spark& s) { return s.age >= s.lifetime; });
     }
 
-    explicit Impl(audio::Engine& a) : audio(a) {}
+    explicit Impl(audio::Engine* a) : audio(a) {}
 
     void load() {
         tablePath = findAsset(std::string("assets/") + kFeedbackTable);
@@ -249,15 +251,19 @@ struct Player::Impl {
             kicks.push_back({time, r.kickSeconds, r.bloomKick * strength, r.exposureKick * strength});
         if (r.hitFlash > 0.0f && r.hitFlashSeconds > 0.0f && target)
             objectFlashes.push_back({time, r.hitFlashSeconds, std::clamp(r.hitFlash * strength, 0.0f, 1.0f), *target});
-        if (!r.sound.empty()) {
+#if MEALKIT_HAS_AUDIO
+        if (!r.sound.empty() && audio) {
             if (positioned) {
-                if (r.soundParam.empty()) audio.play(r.sound, position);
-                else audio.play(r.sound, position, {{r.soundParam.c_str(), rawStrength}});
+                if (r.soundParam.empty()) audio->play(r.sound, position);
+                else audio->play(r.sound, position, {{r.soundParam.c_str(), rawStrength}});
             } else {
-                if (r.soundParam.empty()) audio.play2D(r.sound);
-                else audio.play2D(r.sound, {{r.soundParam.c_str(), rawStrength}});
+                if (r.soundParam.empty()) audio->play2D(r.sound);
+                else audio->play2D(r.sound, {{r.soundParam.c_str(), rawStrength}});
             }
         }
+#else
+        (void)rawStrength;
+#endif
         if (r.shake > 0.0f && r.shakeSeconds > 0.0f)
             shakes.push_back({time, r.shakeSeconds, r.shake * strength, r.shakeFrequency, r.shakeRange, positioned,
                               position, static_cast<f32>(shakeCount++) * 1.7f});
@@ -268,7 +274,8 @@ struct Player::Impl {
     }
 };
 
-Player::Player(audio::Engine& audio) : m(new Impl(audio)) { m->load(); }
+Player::Player(audio::Engine& audio) : m(new Impl(&audio)) { m->load(); }
+Player::Player() : m(new Impl(nullptr)) { m->load(); }
 
 Player::~Player() { delete m; }
 

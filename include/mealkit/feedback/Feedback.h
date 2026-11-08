@@ -78,7 +78,8 @@ inline constexpr const char* kFeedbackTable = "feedback.table"; // relative to a
 
 class Player {
 public:
-    explicit Player(audio::Engine& audio);
+    explicit Player(audio::Engine& audio); // sounds of the table's rows play through it
+    Player();                              // no sound (builds without the audio module): every other reaction still runs
     ~Player();
     Player(const Player&) = delete;
     Player& operator=(const Player&) = delete;
