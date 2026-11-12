@@ -1,5 +1,6 @@
 #pragma once
 
+#include "mealkit/render/Fwd.h"
 #include "mealkit/core/Math.h"
 #include "mealkit/core/Reflect.h"
 
@@ -8,10 +9,6 @@
 
 namespace mealkit::audio {
 class Engine;
-}
-namespace mealkit::render {
-class DrawList;
-struct PointLight;
 }
 
 // Event → feedback table (docs/CODING_MODEL.md "Attaching sound, effects, and shake to simulation events"): game feel as data.
