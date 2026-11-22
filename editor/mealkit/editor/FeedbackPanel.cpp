@@ -34,8 +34,8 @@ const char* kindName(const reflect::ValueInfo& v) {
 } // namespace
 
 void FeedbackPanel::setProjectDirectory(const std::string& directory) {
-    m_path = directory + "\\assets\\" + feedback::kFeedbackTable;
-    m_effectsDir = directory + "\\assets\\" + feedback::kEffectFolder;
+    m_path = directory + MEALKIT_SEP "assets" MEALKIT_SEP + feedback::kFeedbackTable;
+    m_effectsDir = directory + MEALKIT_SEP "assets" MEALKIT_SEP + feedback::kEffectFolder;
     m_effectName.clear();
     load();
 }
@@ -74,7 +74,7 @@ void FeedbackPanel::loadEffect(const std::string& name) {
     m_effect = {};
     m_effectDirty = false;
     std::string error;
-    const std::string path = m_effectsDir + "\\" + name + ".fx";
+    const std::string path = m_effectsDir + MEALKIT_SEP + name + ".fx";
     if (fileExists(path) && !reflect::loadTextFile(reflect::typeOf<feedback::Effect>(), &m_effect, path, text::kEffect, &error))
         m_status = error;
     reflect::TextFields now;
@@ -94,7 +94,7 @@ void FeedbackPanel::saveEffect() {
     m_effectDirty = false;
     if (m_effectName.empty()) return;
     createDirectories(m_effectsDir);
-    const std::string path = m_effectsDir + "\\" + m_effectName + ".fx";
+    const std::string path = m_effectsDir + MEALKIT_SEP + m_effectName + ".fx";
     if (!reflect::saveTextFile(reflect::typeOf<feedback::Effect>(), &m_effect, path, text::kEffect,
                                "MealKit particle effect. Edit it in the editor's [Feedback] panel."))
         m_status = trf("Could not save %s", path.c_str());
