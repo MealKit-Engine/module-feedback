@@ -61,6 +61,17 @@ struct ObjectFlash {
     u32 id = 0;
 };
 
+// Damped spring per object id (same integration as FuseTag's view/Juice Spring: semi-implicit Euler on view time)
+struct ObjectSquash {
+    u32 id = 0;
+    f32 value = 0.0f, velocity = 0.0f;
+    f32 frequency = 5.0f, damping = 0.3f;
+};
+constexpr f32 kMaxSquashVelocity = 8.0f; // const-ok: about the biggest single kick, repeated kicks don't pile up
+constexpr f32 kMaxSquash = 0.8f;         // const-ok: stretch limit; the low limit is in squashScale
+constexpr f32 kMinSquash = -0.6f;        // const-ok: squash limit
+constexpr f32 kSquashRest = 0.002f;      // const-ok: spring is dropped below this value and speed
+
 // One live particle (view side, outside determinism)
 struct Spark {
     Vec3 position, velocity;
@@ -148,6 +159,7 @@ struct Player::Impl {
     std::vector<EventLight> lights;
     std::vector<PostKick> kicks;
     std::vector<ObjectFlash> objectFlashes;
+    std::vector<ObjectSquash> squashes;
     u32 shakeCount = 0;
     std::vector<LoadedEffect> effects;
     std::vector<Spark> sparks;
@@ -222,6 +234,15 @@ struct Player::Impl {
         std::erase_if(sparks, [](const Spark& s) { return s.age >= s.lifetime; });
     }
 
+    void stepSquash(f32 dt) {
+        for (ObjectSquash& q : squashes) {
+            const f32 w = kTwoPi * q.frequency;
+            q.velocity += (-q.value * w * w - 2.0f * q.damping * w * q.velocity) * dt;
+            q.value = std::clamp(q.value + q.velocity * dt, kMinSquash, kMaxSquash);
+        }
+        std::erase_if(squashes, [](const ObjectSquash& q) { return std::abs(q.value) < kSquashRest && std::abs(q.velocity) < kSquashRest; });
+    }
+
     explicit Impl(audio::Engine* a) : audio(a) {}
 
     void load() {
@@ -251,6 +272,17 @@ struct Player::Impl {
             kicks.push_back({time, r.kickSeconds, r.bloomKick * strength, r.exposureKick * strength});
         if (r.hitFlash > 0.0f && r.hitFlashSeconds > 0.0f && target)
             objectFlashes.push_back({time, r.hitFlashSeconds, std::clamp(r.hitFlash * strength, 0.0f, 1.0f), *target});
+        if (r.squash != 0.0f && target) {
+            auto it = std::find_if(squashes.begin(), squashes.end(), [&](const ObjectSquash& q) { return q.id == *target; });
+            if (it == squashes.end()) {
+                squashes.push_back({});
+                it = squashes.end() - 1;
+                it->id = *target;
+            }
+            it->frequency = std::max(r.squashFrequency, 0.1f);
+            it->damping = std::max(r.squashDamping, 0.0f);
+            it->velocity = std::clamp(it->velocity + r.squash * strength, -kMaxSquashVelocity, kMaxSquashVelocity);
+        }
 #if MEALKIT_HAS_AUDIO
         if (!r.sound.empty() && audio) {
             if (positioned) {
@@ -323,6 +355,7 @@ void Player::update(f64 dt) {
     std::erase_if(m->kicks, [&](const PostKick& k) { return m->time - k.start >= k.seconds; });
     std::erase_if(m->objectFlashes, [&](const ObjectFlash& f) { return m->time - f.start >= f.seconds; });
     m->pollEffects();
+    if (!hitStop()) m->stepSquash(static_cast<f32>(std::min(dt, 0.1))); // squash springs also stop during hitstop
     if (!hitStop()) m->step(static_cast<f32>(std::min(dt, 0.1))); // particles also stop during hitstop
 }
 
@@ -407,6 +440,12 @@ f32 Player::objectFlash(u32 id) const {
     return amount * m->flashScale;
 }
 
+f32 Player::objectSquash(u32 id) const {
+    for (const ObjectSquash& q : m->squashes)
+        if (q.id == id) return q.value * m->flashScale;
+    return 0.0f;
+}
+
 bool Player::hitStop() const { return m->hitStopEnabled && m->time < m->hitStopUntil; }
 
 void Player::setAccessibility(f32 shakeScale, f32 flashScale, bool hitStop) {
@@ -421,6 +460,7 @@ void Player::clear() {
     m->lights.clear();
     m->kicks.clear();
     m->objectFlashes.clear();
+    m->squashes.clear();
     m->hitStopUntil = 0.0;
     m->sparks.clear();
 }

@@ -4,6 +4,8 @@
 #include "mealkit/core/Math.h"
 #include "mealkit/core/Reflect.h"
 
+#include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -45,7 +47,10 @@ MEALKIT_STRUCT(Reaction) {
     MEALKIT_FIELD(f32, kickSeconds, 0.2f, "Bloom and exposure kick time (s)");
     MEALKIT_FIELD(f32, hitFlash, 0.0f, "Object flash at full strength (0 to 1)");
     MEALKIT_FIELD(f32, hitFlashSeconds, 0.1f, "Object flash time (s)|showIf=hitFlash>0");
-    MEALKIT_FIELD(std::string, targetFrom, "player", "Event field with the id that flashes|showIf=hitFlash>0");
+    MEALKIT_FIELD(std::string, targetFrom, "player", "Event field with the id of the object hit flash and squash act on");
+    MEALKIT_FIELD(f32, squash, 0.0f, "Object squash kick at full strength (negative squashes, positive stretches)");
+    MEALKIT_FIELD(f32, squashFrequency, 5.0f, "Squash spring frequency (Hz)|showIf=squash");
+    MEALKIT_FIELD(f32, squashDamping, 0.3f, "Squash spring damping (1 is no wobble)|showIf=squash");
 };
 
 // One particle effect = assets/effects/<name>.fx (docs/DECISIONS.md 2026-10-27 "Particles use our own runtime"). A burst of particles emitted at once:
@@ -109,6 +114,9 @@ public:
     void postKick(f32& bloom, f32& exposure) const;
     // Flash amount 0..1 of an id from the row's targetFrom field. View code passes it to render::instanceFlash when drawing that object
     f32 objectFlash(u32 id) const;
+    // Squash of an id from the row's targetFrom field: a damped spring kicked by `squash`. Height scale is 1 + value; view code keeps the volume
+    // (width = 1/sqrt(height), see squashScale) and multiplies it into the object's scale. Already scaled by the flash setting
+    f32 objectSquash(u32 id) const;
     // During hitstop (freezes game view clocks/interpolation/effects. The simulation continues)
     bool hitStop() const;
     void clear(); // clears ongoing shake/flash/hitstop (when stopping play)
@@ -122,5 +130,12 @@ private:
     struct Impl;
     Impl* m = nullptr;
 };
+
+// Squash value (Player::objectSquash) to a scale that keeps the volume: {xz, y, xz}. The height never goes below 0.2 or the object would vanish
+inline Vec3 squashScale(f32 squash) {
+    const f32 y = std::max(1.0f + squash, 0.2f); // const-ok: never flip or vanish
+    const f32 xz = 1.0f / std::sqrt(y);
+    return {xz, y, xz};
+}
 
 } // namespace mealkit::feedback
